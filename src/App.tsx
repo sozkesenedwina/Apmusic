@@ -373,13 +373,19 @@ export default function App() {
 
   const spawnVisualNote = useCallback((track: Track, stepIndex: number) => {
     const musicSymbols = ['♩', '♪', '♫', '♬'];
+    const pastelColors = [
+      '#FFB7B2', '#B2E2F2', '#B2B2FF', '#FFDAC1', 
+      '#E2F0CB', '#C5A3FF', '#FFC8A2', '#D4F0F0', 
+      '#FFB5E8', '#F3FFE3', '#E6B3FF', '#B3FFF0'
+    ];
+    const randomColor = pastelColors[Math.floor(Math.random() * pastelColors.length)];
     
     const newNote: VisualNote = {
       id: noteIdRef.current++,
       x: 5 + (stepIndex / STEPS_COUNT) * 90, // Align with the step column horizontally (5% to 95%)
       y: 0, // Not used, we use bottom: 0 in the style
       symbol: musicSymbols[Math.floor(Math.random() * musicSymbols.length)],
-      color: track.color,
+      color: randomColor,
       rotation: Math.random() * 40 - 20,
       trackName: track.name
     };
@@ -420,7 +426,7 @@ export default function App() {
     timerRef.current = window.requestAnimationFrame(scheduler);
   }, [bpm, scheduleNote]);
 
-  const togglePlay = () => {
+  const togglePlay = useCallback(() => {
     engine.init();
     if (isPlaying) {
       if (timerRef.current) cancelAnimationFrame(timerRef.current);
@@ -432,7 +438,18 @@ export default function App() {
       setIsPlaying(true);
       scheduler();
     }
-  };
+  }, [isPlaying, scheduler]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && e.target === document.body) {
+        e.preventDefault();
+        togglePlay();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlay]);
 
   const toggleStep = (trackIndex: number, stepIndex: number) => {
     const newTracks = [...tracks];
@@ -493,7 +510,7 @@ export default function App() {
               <h2 className="text-4xl font-black tracking-[0.3em] text-white text-center">
                 EN ATTENTE DU RYTHME...
               </h2>
-              <p className="mt-4 text-[10px] uppercase tracking-[0.5em] opacity-40">Appuyez sur Lecture pour commencer</p>
+              <p className="mt-4 text-[10px] uppercase tracking-[0.5em] opacity-40">Appuyez sur Espace ou Lecture pour commencer</p>
             </motion.div>
           </motion.div>
         )}
