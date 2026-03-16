@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, Eye, EyeOff } from 'lucide-react';
+import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, Eye, EyeOff, ChevronDown } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
@@ -352,6 +352,7 @@ export default function App() {
   const [waitingMode, setWaitingMode] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [visualNotes, setVisualNotes] = useState<VisualNote[]>([]);
+  const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
 
   // Update resonance in engine
   useEffect(() => {
@@ -472,6 +473,24 @@ export default function App() {
       ...t,
       steps: t.steps.map(() => ({ active: false }))
     })));
+  };
+
+  const changeTrackInstrument = (trackIndex: number, newInstrumentId: InstrumentType) => {
+    const newConfig = TRACKS_CONFIG.find(c => c.id === newInstrumentId);
+    if (!newConfig) return;
+    
+    setTracks(prev => {
+      const newTracks = [...prev];
+      newTracks[trackIndex] = {
+        ...newTracks[trackIndex],
+        id: newConfig.id,
+        name: newConfig.name,
+        color: newConfig.color,
+        icon: newConfig.icon,
+      };
+      return newTracks;
+    });
+    setActiveDropdown(null);
   };
 
   return (
@@ -635,6 +654,10 @@ export default function App() {
 
       {/* Main Grid */}
       <div className="w-full max-w-4xl bg-white/5 p-6 rounded-2xl border border-white/10 shadow-2xl relative overflow-hidden">
+        {activeDropdown !== null && (
+          <div className="fixed inset-0 z-40" onClick={() => setActiveDropdown(null)} />
+        )}
+        
         {/* Decorative background lines */}
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none">
           <div className="grid grid-cols-16 h-full w-full">
@@ -654,14 +677,44 @@ export default function App() {
                 borderLeft: `4px solid ${track.color}44` // Colored left border
               }}
             >
-              <div className="w-24 flex flex-col items-start">
-                <div 
-                  className="px-2 py-1 rounded-md mb-1 flex items-center gap-1.5"
+              <div className="w-24 flex flex-col items-start relative z-50">
+                <button 
+                  onClick={() => setActiveDropdown(activeDropdown === trackIdx ? null : trackIdx)}
+                  className="px-2 py-1 rounded-md mb-1 flex items-center justify-between w-full hover:opacity-80 transition-opacity"
                   style={{ backgroundColor: `${track.color}22` }}
+                  title="Changer d'instrument"
                 >
-                  <span style={{ color: track.color }}>{track.icon}</span>
-                  <span className="text-[9px] font-black uppercase tracking-wider" style={{ color: track.color }}>{track.name}</span>
-                </div>
+                  <div className="flex items-center gap-1.5 overflow-hidden">
+                    <span style={{ color: track.color }} className="shrink-0">{track.icon}</span>
+                    <span className="text-[9px] font-black uppercase tracking-wider truncate" style={{ color: track.color }}>{track.name}</span>
+                  </div>
+                  <ChevronDown size={10} style={{ color: track.color }} className="shrink-0 opacity-50" />
+                </button>
+
+                {/* Dropdown Menu */}
+                <AnimatePresence>
+                  {activeDropdown === trackIdx && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute top-full left-0 mt-1 w-40 bg-[#1A1A1C] border border-white/10 rounded-lg shadow-2xl overflow-hidden"
+                    >
+                      {TRACKS_CONFIG.map(config => (
+                        <button
+                          key={config.id}
+                          onClick={() => changeTrackInstrument(trackIdx, config.id)}
+                          className={`w-full px-3 py-2 flex items-center gap-2 hover:bg-white/5 transition-colors text-left ${track.id === config.id ? 'bg-white/5' : ''}`}
+                        >
+                          <span style={{ color: config.color }}>{config.icon}</span>
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-white/80">{config.name}</span>
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
                 <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
                   <motion.div 
                     className="h-full" 
