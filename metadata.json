@@ -1,0 +1,5 @@
+{
+  "name": "La Musique en Rythme",
+  "description": "Un synthétiseur de batterie technique et un séquenceur à pas construit avec l'API Web Audio.",
+  "requestFramePermissions": []
+}
