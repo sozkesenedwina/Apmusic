@@ -372,20 +372,13 @@ export default function App() {
   const symbols = ['♩', '♪', '♫', '♬', '♭', '♮', '♯'];
 
   const spawnVisualNote = useCallback((track: Track, stepIndex: number) => {
-    const symbolsMap: Record<string, string> = {
-      'kick': '●',
-      'snare': '■',
-      'hihat': '▲',
-      'tom': '◆',
-      'piano': '♫',
-      'violin': '♬'
-    };
+    const musicSymbols = ['♩', '♪', '♫', '♬'];
     
     const newNote: VisualNote = {
       id: noteIdRef.current++,
       x: 5 + (stepIndex / STEPS_COUNT) * 90, // Align with the step column horizontally (5% to 95%)
       y: 0, // Not used, we use bottom: 0 in the style
-      symbol: symbolsMap[track.id] || '♩',
+      symbol: musicSymbols[Math.floor(Math.random() * musicSymbols.length)],
       color: track.color,
       rotation: Math.random() * 40 - 20,
       trackName: track.name
@@ -396,7 +389,7 @@ export default function App() {
     // Remove note after animation
     setTimeout(() => {
       setVisualNotes(prev => prev.filter(n => n.id !== newNote.id));
-    }, 2000);
+    }, 1500);
   }, []);
 
   const scheduleNote = useCallback((step: number, time: number) => {
@@ -512,17 +505,14 @@ export default function App() {
           {visualNotes.map((note) => (
             <motion.div
               key={note.id}
-              initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '5%' }}
+              initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '0%' }}
               animate={{ opacity: [0, 1, 0], scale: [0.5, 1.2, 1], rotate: note.rotation }}
               exit={{ opacity: 0 }}
               transition={{ duration: 1.5, ease: "easeOut" }}
-              className="absolute flex flex-col items-center justify-center drop-shadow-lg"
+              className="absolute flex flex-col items-center justify-center drop-shadow-lg origin-bottom"
               style={{ color: note.color }}
             >
               <span className="text-5xl font-serif">{note.symbol}</span>
-              <span className="text-[10px] font-bold uppercase tracking-widest mt-2 bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm border border-white/10 text-white/90">
-                {note.trackName}
-              </span>
             </motion.div>
           ))}
         </AnimatePresence>
