@@ -6,7 +6,39 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import * as lamejs from 'lamejs';
+
+// Polyfill for lamejs bugs
+if (typeof window !== 'undefined') {
+  if (!(window as any).MPEGMode) {
+    function MPEGMode(ordinal: number) {
+      (this as any).ordinal = () => ordinal;
+    }
+    (MPEGMode as any).STEREO = new (MPEGMode as any)(0);
+    (MPEGMode as any).JOINT_STEREO = new (MPEGMode as any)(1);
+    (MPEGMode as any).DUAL_CHANNEL = new (MPEGMode as any)(2);
+    (MPEGMode as any).MONO = new (MPEGMode as any)(3);
+    (MPEGMode as any).NOT_SET = new (MPEGMode as any)(4);
+    (window as any).MPEGMode = MPEGMode;
+  }
+  
+  if (!(window as any).Lame) {
+    (window as any).Lame = {
+      V9: 410, V8: 420, V7: 430, V6: 440, V5: 450, V4: 460, V3: 470, V2: 480, V1: 490, V0: 500,
+      R3MIX: 1000, STANDARD: 1001, EXTREME: 1002, INSANE: 1003, STANDARD_FAST: 1004, EXTREME_FAST: 1005, MEDIUM: 1006, MEDIUM_FAST: 1007
+    };
+  }
+  
+  if (!(window as any).BitStream) {
+    (window as any).BitStream = {
+      EQ: (a: number, b: number) => {
+        return (Math.abs(a) > Math.abs(b)) ? (Math.abs(a - b) <= (Math.abs(a) * 1e-6)) : (Math.abs(a - b) <= (Math.abs(b) * 1e-6));
+      },
+      NEQ: (a: number, b: number) => {
+        return !((window as any).BitStream.EQ(a, b));
+      }
+    };
+  }
+}
 
 // --- Types ---
 
@@ -57,56 +89,68 @@ const convertBlobToAudioBuffer = async (blob: Blob): Promise<AudioBuffer> => {
   return await audioCtx.decodeAudioData(arrayBuffer);
 };
 
-const audioBufferToWav = (buffer: AudioBuffer): Blob => {
-  const numChannels = buffer.numberOfChannels;
-  const sampleRate = buffer.sampleRate;
-  const format = 1; // PCM
-  const bitDepth = 16;
+const audioBufferToWav = (buffer: AudioBuffer, onProgress: (p: number) => void): Promise<Blob> => {
+  return new Promise((resolve) => {
+    onProgress(0.1);
+    setTimeout(() => {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const format = 1; // PCM
+      const bitDepth = 16;
 
-  const result = new Float32Array(buffer.length * numChannels);
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < buffer.length; i++) {
-      result[i * numChannels + channel] = channelData[i];
-    }
-  }
+      const result = new Float32Array(buffer.length * numChannels);
+      for (let channel = 0; channel < numChannels; channel++) {
+        const channelData = buffer.getChannelData(channel);
+        for (let i = 0; i < buffer.length; i++) {
+          result[i * numChannels + channel] = channelData[i];
+        }
+      }
 
-  const dataLength = result.length * (bitDepth / 8);
-  const bufferLength = 44 + dataLength;
-  const arrayBuffer = new ArrayBuffer(bufferLength);
-  const view = new DataView(arrayBuffer);
+      onProgress(0.4);
 
-  const writeString = (view: DataView, offset: number, string: string) => {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  };
+      const dataLength = result.length * (bitDepth / 8);
+      const bufferLength = 44 + dataLength;
+      const arrayBuffer = new ArrayBuffer(bufferLength);
+      const view = new DataView(arrayBuffer);
 
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + dataLength, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, format, true);
-  view.setUint16(22, numChannels, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
-  view.setUint16(32, numChannels * (bitDepth / 8), true);
-  view.setUint16(34, bitDepth, true);
-  writeString(view, 36, 'data');
-  view.setUint32(40, dataLength, true);
+      const writeString = (view: DataView, offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
 
-  let offset = 44;
-  for (let i = 0; i < result.length; i++) {
-    const s = Math.max(-1, Math.min(1, result[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-    offset += 2;
-  }
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + dataLength, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, format, true);
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
+      view.setUint16(32, numChannels * (bitDepth / 8), true);
+      view.setUint16(34, bitDepth, true);
+      writeString(view, 36, 'data');
+      view.setUint32(40, dataLength, true);
 
-  return new Blob([view], { type: 'audio/wav' });
+      onProgress(0.6);
+
+      let offset = 44;
+      for (let i = 0; i < result.length; i++) {
+        const s = Math.max(-1, Math.min(1, result[i]));
+        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        offset += 2;
+      }
+
+      onProgress(1);
+      resolve(new Blob([view], { type: 'audio/wav' }));
+    }, 50);
+  });
 };
 
-const audioBufferToMp3 = (buffer: AudioBuffer): Promise<Blob> => {
+const audioBufferToMp3 = async (buffer: AudioBuffer, onProgress: (p: number) => void): Promise<Blob> => {
+  const lamejs = await import('lamejs');
+
   return new Promise((resolve) => {
     setTimeout(() => {
       const numChannels = buffer.numberOfChannels;
@@ -131,22 +175,37 @@ const audioBufferToMp3 = (buffer: AudioBuffer): Promise<Blob> => {
 
       const leftInt16 = floatToInt16(left);
       const rightInt16 = floatToInt16(right);
+      const totalSamples = leftInt16.length;
 
-      for (let i = 0; i < leftInt16.length; i += sampleBlockSize) {
-        const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
-        const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
-        const mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
-        if (mp3buf.length > 0) {
-          mp3Data.push(mp3buf);
+      let i = 0;
+      const encodeChunk = () => {
+        const chunkSize = sampleBlockSize * 100; // Encode chunks to avoid blocking UI
+        const end = Math.min(i + chunkSize, totalSamples);
+        
+        for (; i < end; i += sampleBlockSize) {
+          const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
+          const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
+          const mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
+          if (mp3buf.length > 0) {
+            mp3Data.push(mp3buf);
+          }
         }
-      }
-
-      const mp3buf = encoder.flush();
-      if (mp3buf.length > 0) {
-        mp3Data.push(mp3buf);
-      }
-
-      resolve(new Blob(mp3Data, { type: 'audio/mp3' }));
+        
+        onProgress(i / totalSamples);
+        
+        if (i < totalSamples) {
+          setTimeout(encodeChunk, 0);
+        } else {
+          const mp3buf = encoder.flush();
+          if (mp3buf.length > 0) {
+            mp3Data.push(mp3buf);
+          }
+          onProgress(1);
+          resolve(new Blob(mp3Data, { type: 'audio/mp3' }));
+        }
+      };
+      
+      encodeChunk();
     }, 50);
   });
 };
@@ -443,16 +502,21 @@ export default function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
   const [isConverting, setIsConverting] = useState(false);
+  const [conversionProgress, setConversionProgress] = useState(0);
+  const [showSuccessNote, setShowSuccessNote] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [visualNotes, setVisualNotes] = useState<VisualNote[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
+  const [pendingFormat, setPendingFormat] = useState<'mp3' | 'wav' | null>(null);
+  const [filename, setFilename] = useState(`beat-${new Date().toISOString().slice(0, 10)}`);
+  const [showFilenameModal, setShowFilenameModal] = useState(false);
 
   // Update resonance in engine
   useEffect(() => {
     engine.setResonance(resonance);
   }, [resonance]);
   const [tracks, setTracks] = useState<Track[]>(
-    TRACKS_CONFIG.map(config => ({
+    TRACKS_CONFIG.slice(0, 4).map(config => ({
       ...config,
       instanceId: Math.random().toString(36).substring(7),
       steps: Array(STEPS_COUNT).fill(null).map(() => ({ active: false })),
@@ -562,38 +626,54 @@ export default function App() {
     }
   }, [isRecording]);
 
-  const handleDownload = async (format: 'mp3' | 'wav') => {
-    if (!recordedBlob) return;
+  const handleDownload = (format: 'mp3' | 'wav') => {
+    setPendingFormat(format);
+    setFilename(`beat-${new Date().toISOString().slice(0, 10)}`);
+    setShowFilenameModal(true);
+  };
+
+  const executeDownload = async () => {
+    if (!recordedBlob || !pendingFormat) return;
+    setShowFilenameModal(false);
     setIsConverting(true);
+    setConversionProgress(0);
     
     try {
       const audioBuffer = await convertBlobToAudioBuffer(recordedBlob);
       let finalBlob: Blob;
       let extension: string;
       
-      if (format === 'mp3') {
-        finalBlob = await audioBufferToMp3(audioBuffer);
+      if (pendingFormat === 'mp3') {
+        finalBlob = await audioBufferToMp3(audioBuffer, setConversionProgress);
         extension = 'mp3';
       } else {
-        finalBlob = audioBufferToWav(audioBuffer);
+        finalBlob = await audioBufferToWav(audioBuffer, setConversionProgress);
         extension = 'wav';
       }
+      
+      // Wait a moment so the user can see the 100% progress
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       const url = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `beat-${new Date().toISOString().slice(0, 10)}.${extension}`;
+      const finalFilename = filename.trim() || `beat-${new Date().toISOString().slice(0, 10)}`;
+      a.download = `${finalFilename}.${extension}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       
       setRecordedBlob(null);
+      setShowSuccessNote(true);
+      setTimeout(() => setShowSuccessNote(false), 3000);
     } catch (error) {
       console.error("Conversion failed:", error);
       alert("Erreur lors de la conversion du fichier audio.");
     } finally {
       setIsConverting(false);
+      setConversionProgress(0);
+      setPendingFormat(null);
     }
   };
 
@@ -669,9 +749,18 @@ export default function App() {
               <p className="text-white/50 text-sm mb-8 text-center">Choisissez le format de téléchargement pour votre création.</p>
               
               {isConverting ? (
-                <div className="flex flex-col items-center py-4">
-                  <div className="w-8 h-8 border-4 border-[#FFB7B2] border-t-transparent rounded-full animate-spin mb-4" />
-                  <span className="text-sm animate-pulse">Conversion en cours...</span>
+                <div className="flex flex-col items-center py-4 w-full">
+                  <div className="w-full bg-white/10 rounded-full h-3 mb-4 overflow-hidden">
+                    <motion.div 
+                      className="bg-[#FFB7B2] h-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${conversionProgress * 100}%` }}
+                      transition={{ duration: 0.1 }}
+                    />
+                  </div>
+                  <span className="text-sm animate-pulse text-[#FFB7B2]">
+                    Conversion en cours... {Math.round(conversionProgress * 100)}%
+                  </span>
                 </div>
               ) : (
                 <div className="flex gap-4 w-full">
@@ -699,6 +788,24 @@ export default function App() {
                 </button>
               )}
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Success Note Overlay */}
+      <AnimatePresence>
+        {showSuccessNote && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5, y: 50 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 1.5, y: -50 }}
+            transition={{ type: "spring", stiffness: 200, damping: 20 }}
+            className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center"
+          >
+            <div className="bg-[#FFB7B2] text-black p-6 rounded-full shadow-[0_0_50px_rgba(255,183,178,0.5)] flex flex-col items-center">
+              <Music size={64} className="mb-2" />
+              <span className="font-bold text-lg">Sauvegardé !</span>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1067,6 +1174,68 @@ export default function App() {
         <div className="absolute top-2 left-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Spectral Analysis</div>
         <div className="absolute bottom-2 right-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Note Stream v1.0</div>
       </div>
+
+      {/* Filename Prompt Modal */}
+      <AnimatePresence>
+        {showFilenameModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4"
+          >
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+              className="bg-[#1a1a1a] border border-white/10 p-8 rounded-3xl max-w-md w-full shadow-2xl"
+            >
+              <div className="flex items-center gap-3 mb-6">
+                <div className="w-10 h-10 rounded-xl bg-[#FFB7B2]/20 flex items-center justify-center text-[#FFB7B2]">
+                  <Music size={20} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold">Nommer votre création</h3>
+                  <p className="text-xs opacity-50 uppercase tracking-widest">Format: {pendingFormat?.toUpperCase()}</p>
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="text-[10px] uppercase font-bold opacity-40 mb-2 block tracking-widest">Nom du fichier</label>
+                  <input
+                    type="text"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    autoFocus
+                    onKeyDown={(e) => e.key === 'Enter' && executeDownload()}
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#FFB7B2]/50 transition-colors"
+                    placeholder="Mon super beat..."
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowFilenameModal(false);
+                      setPendingFormat(null);
+                    }}
+                    className="flex-1 px-6 py-3 rounded-xl border border-white/10 text-sm font-bold hover:bg-white/5 transition-colors"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={executeDownload}
+                    className="flex-1 px-6 py-3 rounded-xl bg-[#FFB7B2] text-black text-sm font-bold hover:opacity-90 transition-opacity shadow-lg shadow-[#FFB7B2]/20"
+                  >
+                    Télécharger
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
