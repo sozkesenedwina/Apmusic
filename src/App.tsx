@@ -893,26 +893,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Background Visual Notes */}
-      {showVisualizer && (
-        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-          <AnimatePresence>
-            {visualNotes.map((note) => (
-              <motion.div
-                key={note.id}
-                initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '0%' }}
-                animate={{ opacity: [0, 1, 0], scale: [0.5, 1.2, 1], rotate: note.rotation }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 1.5, ease: "easeOut" }}
-                className="absolute flex flex-col items-center justify-center drop-shadow-lg origin-bottom"
-                style={{ color: note.color }}
-              >
-                <span className="text-5xl font-serif">{note.symbol}</span>
-              </motion.div>
-            ))}
-          </AnimatePresence>
-        </div>
-      )}
+      {/* Background Visual Notes removed from here to be moved inside visualizer */}
 
       {/* Header */}
       <div className="w-full max-w-4xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4 border-b border-white/10 pb-6">
@@ -1201,6 +1182,29 @@ export default function App() {
             exit={{ height: 0, opacity: 0, marginTop: 0 }}
             className="w-full max-w-6xl h-[512px] bg-white/5 rounded-3xl border border-white/10 relative overflow-hidden flex items-center justify-center"
           >
+            <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+              <AnimatePresence>
+                {visualNotes.map((note) => (
+                  <motion.div
+                    key={note.id}
+                    initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '0%', y: 0 }}
+                    animate={{ 
+                      opacity: [0, 1, 0], 
+                      scale: [0.5, 1.2, 1], 
+                      rotate: note.rotation,
+                      y: -440 
+                    }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 1.5, ease: "easeOut" }}
+                    className="absolute flex flex-col items-center justify-center drop-shadow-lg origin-bottom"
+                    style={{ color: note.color }}
+                  >
+                    <span className="text-4xl font-serif">{note.symbol}</span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+
             <div className="absolute inset-0 flex items-end justify-around px-6 opacity-20 pb-12">
               {Array(64).fill(0).map((_, i) => (
                 <motion.div
