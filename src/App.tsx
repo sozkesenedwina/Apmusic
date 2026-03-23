@@ -4,8 +4,9 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2 } from 'lucide-react';
+import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import * as lamejs from 'lamejs';
 
 // --- Types ---
 
@@ -48,6 +49,108 @@ const TRACKS_CONFIG: { id: InstrumentType; name: string; color: string; icon: Re
   { id: 'violin', name: 'VIOLON', color: '#C5A3FF', icon: <Music size={14} /> },
 ];
 
+// --- Audio Converters ---
+
+const convertBlobToAudioBuffer = async (blob: Blob): Promise<AudioBuffer> => {
+  const arrayBuffer = await blob.arrayBuffer();
+  const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  return await audioCtx.decodeAudioData(arrayBuffer);
+};
+
+const audioBufferToWav = (buffer: AudioBuffer): Blob => {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+
+  const result = new Float32Array(buffer.length * numChannels);
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < buffer.length; i++) {
+      result[i * numChannels + channel] = channelData[i];
+    }
+  }
+
+  const dataLength = result.length * (bitDepth / 8);
+  const bufferLength = 44 + dataLength;
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const view = new DataView(arrayBuffer);
+
+  const writeString = (view: DataView, offset: number, string: string) => {
+    for (let i = 0; i < string.length; i++) {
+      view.setUint8(offset + i, string.charCodeAt(i));
+    }
+  };
+
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + dataLength, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
+  view.setUint16(32, numChannels * (bitDepth / 8), true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  let offset = 44;
+  for (let i = 0; i < result.length; i++) {
+    const s = Math.max(-1, Math.min(1, result[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+    offset += 2;
+  }
+
+  return new Blob([view], { type: 'audio/wav' });
+};
+
+const audioBufferToMp3 = (buffer: AudioBuffer): Promise<Blob> => {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      const numChannels = buffer.numberOfChannels;
+      const sampleRate = buffer.sampleRate;
+      const Mp3Encoder = (lamejs as any).Mp3Encoder || (lamejs as any).default?.Mp3Encoder;
+      const encoder = new Mp3Encoder(numChannels, sampleRate, 128);
+      
+      const left = buffer.getChannelData(0);
+      const right = numChannels > 1 ? buffer.getChannelData(1) : left;
+
+      const sampleBlockSize = 1152;
+      const mp3Data: Int8Array[] = [];
+
+      const floatToInt16 = (f32Array: Float32Array) => {
+        const i16Array = new Int16Array(f32Array.length);
+        for (let i = 0; i < f32Array.length; i++) {
+          const s = Math.max(-1, Math.min(1, f32Array[i]));
+          i16Array[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return i16Array;
+      };
+
+      const leftInt16 = floatToInt16(left);
+      const rightInt16 = floatToInt16(right);
+
+      for (let i = 0; i < leftInt16.length; i += sampleBlockSize) {
+        const leftChunk = leftInt16.subarray(i, i + sampleBlockSize);
+        const rightChunk = rightInt16.subarray(i, i + sampleBlockSize);
+        const mp3buf = encoder.encodeBuffer(leftChunk, rightChunk);
+        if (mp3buf.length > 0) {
+          mp3Data.push(mp3buf);
+        }
+      }
+
+      const mp3buf = encoder.flush();
+      if (mp3buf.length > 0) {
+        mp3Data.push(mp3buf);
+      }
+
+      resolve(new Blob(mp3Data, { type: 'audio/mp3' }));
+    }, 50);
+  });
+};
+
 // --- Audio Engine ---
 
 class AudioEngine {
@@ -55,6 +158,9 @@ class AudioEngine {
   private masterGain: GainNode | null = null;
   private masterFilter: BiquadFilterNode | null = null;
   private analyser: AnalyserNode | null = null;
+  private mediaStreamDestination: MediaStreamAudioDestinationNode | null = null;
+  private mediaRecorder: MediaRecorder | null = null;
+  private recordedChunks: Blob[] = [];
 
   init() {
     if (!this.ctx) {
@@ -74,10 +180,49 @@ class AudioEngine {
       this.masterFilter.connect(this.analyser);
       this.analyser.connect(this.masterGain);
       this.masterGain.connect(this.ctx.destination);
+
+      this.mediaStreamDestination = this.ctx.createMediaStreamDestination();
+      this.masterGain.connect(this.mediaStreamDestination);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
+  }
+
+  startRecording() {
+    this.init();
+    if (!this.mediaStreamDestination) return;
+
+    this.recordedChunks = [];
+    try {
+      let options = { mimeType: 'audio/webm;codecs=opus' };
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'audio/ogg;codecs=opus' };
+        if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+          options = { mimeType: '' };
+        }
+      }
+      this.mediaRecorder = new MediaRecorder(this.mediaStreamDestination.stream, options);
+      this.mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          this.recordedChunks.push(e.data);
+        }
+      };
+      this.mediaRecorder.start();
+    } catch (e) {
+      console.error("Recording failed:", e);
+    }
+  }
+
+  stopRecording(callback: (blob: Blob) => void) {
+    if (!this.mediaRecorder || this.mediaRecorder.state === 'inactive') return;
+
+    this.mediaRecorder.onstop = () => {
+      const blob = new Blob(this.recordedChunks, { type: this.mediaRecorder?.mimeType || 'audio/webm' });
+      callback(blob);
+      this.recordedChunks = [];
+    };
+    this.mediaRecorder.stop();
   }
 
   getAnalyser() {
@@ -295,6 +440,9 @@ export default function App() {
   const [bpm, setBpm] = useState(INITIAL_BPM);
   const [resonance, setResonance] = useState(0);
   const [waitingMode, setWaitingMode] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const [isConverting, setIsConverting] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [visualNotes, setVisualNotes] = useState<VisualNote[]>([]);
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null);
@@ -402,6 +550,53 @@ export default function App() {
     }
   }, [isPlaying, scheduler]);
 
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      setIsRecording(false);
+      engine.stopRecording((blob) => {
+        setRecordedBlob(blob);
+      });
+    } else {
+      setIsRecording(true);
+      engine.startRecording();
+    }
+  }, [isRecording]);
+
+  const handleDownload = async (format: 'mp3' | 'wav') => {
+    if (!recordedBlob) return;
+    setIsConverting(true);
+    
+    try {
+      const audioBuffer = await convertBlobToAudioBuffer(recordedBlob);
+      let finalBlob: Blob;
+      let extension: string;
+      
+      if (format === 'mp3') {
+        finalBlob = await audioBufferToMp3(audioBuffer);
+        extension = 'mp3';
+      } else {
+        finalBlob = audioBufferToWav(audioBuffer);
+        extension = 'wav';
+      }
+      
+      const url = URL.createObjectURL(finalBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `beat-${new Date().toISOString().slice(0, 10)}.${extension}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      setRecordedBlob(null);
+    } catch (error) {
+      console.error("Conversion failed:", error);
+      alert("Erreur lors de la conversion du fichier audio.");
+    } finally {
+      setIsConverting(false);
+    }
+  };
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && e.target === document.body) {
@@ -455,6 +650,59 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-white/90 font-mono p-4 md:p-8 flex flex-col items-center justify-center transition-colors duration-500 relative overflow-hidden">
       
+      {/* Download Modal */}
+      <AnimatePresence>
+        {recordedBlob && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, y: 20 }}
+              className="bg-[#1A1A1D] p-8 rounded-2xl border border-white/10 shadow-2xl max-w-md w-full flex flex-col items-center"
+            >
+              <h2 className="text-xl font-bold mb-2">Enregistrement terminé</h2>
+              <p className="text-white/50 text-sm mb-8 text-center">Choisissez le format de téléchargement pour votre création.</p>
+              
+              {isConverting ? (
+                <div className="flex flex-col items-center py-4">
+                  <div className="w-8 h-8 border-4 border-[#FFB7B2] border-t-transparent rounded-full animate-spin mb-4" />
+                  <span className="text-sm animate-pulse">Conversion en cours...</span>
+                </div>
+              ) : (
+                <div className="flex gap-4 w-full">
+                  <button 
+                    onClick={() => handleDownload('mp3')}
+                    className="flex-1 bg-[#FFB7B2] text-black font-bold py-3 rounded-xl hover:scale-105 transition-transform flex items-center justify-center gap-2"
+                  >
+                    <Download size={18} /> MP3
+                  </button>
+                  <button 
+                    onClick={() => handleDownload('wav')}
+                    className="flex-1 bg-white/10 text-white font-bold py-3 rounded-xl hover:bg-white/20 hover:scale-105 transition-all flex items-center justify-center gap-2"
+                  >
+                    <Download size={18} /> WAV
+                  </button>
+                </div>
+              )}
+              
+              {!isConverting && (
+                <button 
+                  onClick={() => setRecordedBlob(null)}
+                  className="mt-6 text-sm text-white/30 hover:text-white/60 transition-colors"
+                >
+                  Annuler
+                </button>
+              )}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Waiting Mode Overlay */}
       <AnimatePresence>
         {waitingMode && !isPlaying && (
@@ -590,6 +838,19 @@ export default function App() {
               title="Arrêt"
             >
               <Square fill="currentColor" />
+            </button>
+
+            {/* Record Button */}
+            <button
+              onClick={toggleRecording}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all duration-300 shadow-lg ${
+                isRecording 
+                  ? 'bg-red-500 text-white shadow-red-500/40 animate-pulse' 
+                  : 'bg-white/10 text-white border border-white/20 hover:bg-white/20 hover:scale-105'
+              }`}
+              title={isRecording ? "Arrêter l'enregistrement" : "Enregistrer le son"}
+            >
+              <div className={`w-4 h-4 rounded-full ${isRecording ? 'bg-white' : 'bg-red-500'}`} />
             </button>
           </div>
         </div>
