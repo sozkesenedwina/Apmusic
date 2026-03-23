@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2, Download } from 'lucide-react';
+import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2, Download, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // Polyfill for lamejs bugs
@@ -510,6 +510,21 @@ export default function App() {
   const [pendingFormat, setPendingFormat] = useState<'mp3' | 'wav' | null>(null);
   const [filename, setFilename] = useState(`beat-${new Date().toISOString().slice(0, 10)}`);
   const [showFilenameModal, setShowFilenameModal] = useState(false);
+  const [showVisualizer, setShowVisualizer] = useState(true);
+  const [isPortrait, setIsPortrait] = useState(false);
+
+  // Orientation detection
+  useEffect(() => {
+    const checkOrientation = () => {
+      const portrait = window.innerHeight > window.innerWidth;
+      const isMobileOrTablet = window.innerWidth < 1024;
+      setIsPortrait(portrait && isMobileOrTablet);
+    };
+
+    checkOrientation();
+    window.addEventListener('resize', checkOrientation);
+    return () => window.removeEventListener('resize', checkOrientation);
+  }, []);
 
   // Update resonance in engine
   useEffect(() => {
@@ -548,6 +563,7 @@ export default function App() {
   const symbols = ['♩', '♪', '♫', '♬', '♭', '♮', '♯'];
 
   const spawnVisualNote = useCallback((track: Track, stepIndex: number) => {
+    if (!showVisualizer) return;
     const musicSymbols = ['♩', '♪', '♫', '♬'];
     const pastelColors = [
       '#FFB7B2', '#B2E2F2', '#B2B2FF', '#FFDAC1', 
@@ -730,6 +746,35 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-white/90 font-mono p-4 md:p-8 flex flex-col items-center justify-center transition-colors duration-500 relative overflow-hidden">
       
+      {/* Landscape Lock Overlay */}
+      <AnimatePresence>
+        {isPortrait && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] bg-[#0A0A0B] flex flex-col items-center justify-center p-8 text-center"
+          >
+            <motion.div
+              animate={{ rotate: [0, 90, 90, 0] }}
+              transition={{ duration: 2, repeat: Infinity, times: [0, 0.4, 0.6, 1], ease: "easeInOut" }}
+              className="mb-8 text-[#FFB7B2]"
+            >
+              <Smartphone size={80} strokeWidth={1.5} />
+            </motion.div>
+            <h2 className="text-2xl font-black tracking-tighter mb-4">MODE PAYSAGE REQUIS</h2>
+            <p className="text-sm opacity-60 max-w-xs leading-relaxed uppercase tracking-widest">
+              Cette application est optimisée pour une utilisation horizontale. Veuillez faire pivoter votre appareil.
+            </p>
+            <div className="mt-12 flex gap-2">
+              <div className="w-2 h-2 rounded-full bg-[#FFB7B2] animate-bounce" />
+              <div className="w-2 h-2 rounded-full bg-[#FFB7B2] animate-bounce delay-100" />
+              <div className="w-2 h-2 rounded-full bg-[#FFB7B2] animate-bounce delay-200" />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Download Modal */}
       <AnimatePresence>
         {recordedBlob && (
@@ -849,33 +894,40 @@ export default function App() {
       </AnimatePresence>
 
       {/* Background Visual Notes */}
-      <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
-        <AnimatePresence>
-          {visualNotes.map((note) => (
-            <motion.div
-              key={note.id}
-              initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '0%' }}
-              animate={{ opacity: [0, 1, 0], scale: [0.5, 1.2, 1], rotate: note.rotation }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 1.5, ease: "easeOut" }}
-              className="absolute flex flex-col items-center justify-center drop-shadow-lg origin-bottom"
-              style={{ color: note.color }}
-            >
-              <span className="text-5xl font-serif">{note.symbol}</span>
-            </motion.div>
-          ))}
-        </AnimatePresence>
-      </div>
+      {showVisualizer && (
+        <div className="absolute inset-0 pointer-events-none z-0 overflow-hidden">
+          <AnimatePresence>
+            {visualNotes.map((note) => (
+              <motion.div
+                key={note.id}
+                initial={{ opacity: 0, scale: 0.5, left: `${note.x}%`, bottom: '0%' }}
+                animate={{ opacity: [0, 1, 0], scale: [0.5, 1.2, 1], rotate: note.rotation }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1.5, ease: "easeOut" }}
+                className="absolute flex flex-col items-center justify-center drop-shadow-lg origin-bottom"
+                style={{ color: note.color }}
+              >
+                <span className="text-5xl font-serif">{note.symbol}</span>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
 
       {/* Header */}
       <div className="w-full max-w-4xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4 border-b border-white/10 pb-6">
         <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-black tracking-tighter flex items-center gap-2 text-white">
-              <Activity className="text-[#FFB7B2]" />
-              LA MUSIQUE EN RYTHME <span className="text-xs font-normal opacity-50 bg-white/10 px-2 py-1 rounded">v1.0.4</span>
-            </h1>
-            <p className="text-[10px] opacity-40 uppercase tracking-[0.2em] mt-1">Séquenceur à pas et Synthétiseur de Batterie</p>
+          <div className="flex flex-col">
+            <div className="flex items-center gap-3">
+              <Activity className="text-[#FFB7B2]" size={24} />
+              <h1 className="text-2xl font-black tracking-tighter text-white whitespace-nowrap">
+                LA MUSIQUE EN RYTHME
+              </h1>
+              <span className="text-[10px] font-normal opacity-30 bg-white/5 px-2 py-0.5 rounded ml-2">v1.0.4</span>
+            </div>
+            <p className="text-[10px] opacity-40 uppercase tracking-[0.3em] mt-1 font-bold">
+              SÉQUENCEUR À PAS & SYNTHÉTISEUR
+            </p>
           </div>
         </div>
 
@@ -1113,6 +1165,18 @@ export default function App() {
 
         <div className="flex items-center gap-4">
           <button 
+            onClick={() => setShowVisualizer(!showVisualizer)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-all text-[10px] uppercase font-bold tracking-widest shadow-sm ${
+              showVisualizer 
+                ? 'bg-[#FFB7B2]/20 border-[#FFB7B2]/40 text-[#FFB7B2]' 
+                : 'bg-white/5 border-white/10 text-white/40 hover:bg-white/10'
+            }`}
+          >
+            <Activity size={14} />
+            {showVisualizer ? 'Cacher Visuel' : 'Afficher Visuel'}
+          </button>
+
+          <button 
             onClick={clearSteps}
             className="text-[10px] uppercase tracking-widest hover:text-[#FFB7B2] transition-colors border border-white/10 px-4 py-2 rounded-lg bg-white/5 shadow-sm"
           >
@@ -1129,51 +1193,60 @@ export default function App() {
       </div>
 
       {/* Visualizer Section */}
-      <div className="mt-12 w-full max-w-4xl h-24 bg-white/5 rounded-2xl border border-white/10 relative overflow-hidden flex items-center justify-center">
-        <div className="absolute inset-0 flex items-center justify-around px-8 opacity-20">
-          {Array(12).fill(0).map((_, i) => (
-            <motion.div
-              key={i}
-              className="w-1 bg-white rounded-full"
-              animate={{ 
-                height: isPlaying ? [20, Math.random() * 60 + 20, 20] : 20 
-              }}
-              transition={{ 
-                repeat: Infinity, 
-                duration: 0.6, 
-                delay: i * 0.1 
-              }}
-            />
-          ))}
-        </div>
-        
-        <div className="relative z-10 flex gap-4">
-          <AnimatePresence>
-            {visualNotes.slice(-8).map((note) => (
-              <motion.div
-                key={`bottom-${note.id}`}
-                initial={{ opacity: 0, scale: 0, y: 20 }}
-                animate={{ opacity: 1, scale: 1.2, y: 0 }}
-                exit={{ opacity: 0, scale: 0.5, x: 20 }}
-                transition={{ type: "spring", stiffness: 300, damping: 20 }}
-                className="text-3xl font-serif drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
-                style={{ color: note.color }}
-              >
-                {note.symbol}
-              </motion.div>
-            ))}
-          </AnimatePresence>
-          {!isPlaying && visualNotes.length === 0 && (
-            <div className="text-[10px] uppercase tracking-[0.3em] opacity-30 animate-pulse">
-              En attente du rythme...
+      <AnimatePresence>
+        {showVisualizer && (
+          <motion.div 
+            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+            animate={{ height: 'auto', opacity: 1, marginTop: 48 }}
+            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+            className="w-full max-w-6xl h-[512px] bg-white/5 rounded-3xl border border-white/10 relative overflow-hidden flex items-center justify-center"
+          >
+            <div className="absolute inset-0 flex items-end justify-around px-6 opacity-20 pb-12">
+              {Array(64).fill(0).map((_, i) => (
+                <motion.div
+                  key={i}
+                  className="w-2 bg-white rounded-t-full"
+                  animate={{ 
+                    height: isPlaying ? [60, Math.random() * 400 + 60, 60] : 60 
+                  }}
+                  transition={{ 
+                    repeat: Infinity, 
+                    duration: 0.3 + Math.random() * 0.5, 
+                    delay: i * 0.03 
+                  }}
+                />
+              ))}
             </div>
-          )}
-        </div>
-        
-        {/* Decorative corner labels */}
-        <div className="absolute top-2 left-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Spectral Analysis</div>
-        <div className="absolute bottom-2 right-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Note Stream v1.0</div>
-      </div>
+            
+            <div className="relative z-10 flex gap-4">
+              <AnimatePresence>
+                {visualNotes.slice(-8).map((note) => (
+                  <motion.div
+                    key={`bottom-${note.id}`}
+                    initial={{ opacity: 0, scale: 0, y: 20 }}
+                    animate={{ opacity: 1, scale: 1.2, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.5, x: 20 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 20 }}
+                    className="text-3xl font-serif drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]"
+                    style={{ color: note.color }}
+                  >
+                    {note.symbol}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+              {!isPlaying && visualNotes.length === 0 && (
+                <div className="text-[10px] uppercase tracking-[0.3em] opacity-30 animate-pulse">
+                  En attente du rythme...
+                </div>
+              )}
+            </div>
+            
+            {/* Decorative corner labels */}
+            <div className="absolute top-2 left-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Spectral Analysis</div>
+            <div className="absolute bottom-2 right-3 text-[8px] font-bold opacity-20 uppercase tracking-widest">Note Stream v1.0</div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Filename Prompt Modal */}
       <AnimatePresence>
