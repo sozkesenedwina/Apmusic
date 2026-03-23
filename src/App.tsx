@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, Eye, EyeOff, ChevronDown, Trash2 } from 'lucide-react';
+import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, ChevronDown, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
@@ -294,7 +294,6 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(INITIAL_BPM);
   const [resonance, setResonance] = useState(0);
-  const [showVisuals, setShowVisuals] = useState(true);
   const [waitingMode, setWaitingMode] = useState(false);
   const [currentStep, setCurrentStep] = useState(-1);
   const [visualNotes, setVisualNotes] = useState<VisualNote[]>([]);
@@ -368,13 +367,11 @@ export default function App() {
       if (track.steps[step].active) {
         engine.playInstrument(track.id, time);
         
-        // Trigger visual note if enabled
-        if (showVisuals) {
-          spawnVisualNote(track, step);
-        }
+        // Trigger visual note
+        spawnVisualNote(track, step);
       }
     });
-  }, [tracks, showVisuals, spawnVisualNote]);
+  }, [tracks, spawnVisualNote]);
 
   const scheduler = useCallback(() => {
     while (nextNoteTimeRef.current < engine.currentTime + 0.1) {
@@ -426,9 +423,7 @@ export default function App() {
     if (track.steps[stepIndex].active) {
       engine.init();
       engine.playInstrument(track.id);
-      if (showVisuals) {
-        spawnVisualNote(track, stepIndex);
-      }
+      spawnVisualNote(track, stepIndex);
     }
   };
 
@@ -552,21 +547,6 @@ export default function App() {
               <span className="text-xs font-bold uppercase tracking-widest">
                 {resonance < 10 ? 'OFF' : resonance < 40 ? 'LOW' : resonance < 70 ? 'MID' : 'MAX'}
               </span>
-            </button>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span className="text-[10px] opacity-40 mb-1 uppercase">Visuels</span>
-            <button 
-              onClick={() => setShowVisuals(!showVisuals)}
-              className={`flex items-center justify-center w-12 h-11 rounded-lg border transition-all ${
-                showVisuals 
-                  ? 'bg-[#FFB7B2]/20 border-[#FFB7B2]/40 text-[#FFB7B2]' 
-                  : 'bg-white/5 border-white/10 text-white/40'
-              }`}
-              title={showVisuals ? "Désactiver les visuels" : "Activer les visuels"}
-            >
-              {showVisuals ? <Eye size={20} /> : <EyeOff size={20} />}
             </button>
           </div>
 
