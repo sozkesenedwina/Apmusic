@@ -4,12 +4,14 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
-  const env = loadEnv(mode, '.', '');
+  const env = loadEnv(mode, process.cwd(), '');
   return {
+    root: 'src',
+    publicDir: '../public',
     base: './',
     build: {
-      outDir: 'docs',
-      emptyOutDir: true,
+      outDir: '../',
+      emptyOutDir: false,
     },
     plugins: [react(), tailwindcss()],
     define: {
