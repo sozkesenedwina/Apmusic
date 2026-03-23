@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, Eye, EyeOff, ChevronDown } from 'lucide-react';
+import { Play, Square, Plus, Minus, Volume2, Activity, Zap, Circle, Drum, Keyboard, Music, Disc, Speaker, Target, Eye, EyeOff, ChevronDown, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Types ---
@@ -17,6 +17,7 @@ interface Step {
 
 interface Track {
   id: InstrumentType;
+  instanceId: string;
   name: string;
   steps: Step[];
   color: string;
@@ -289,61 +290,6 @@ const engine = new AudioEngine();
 
 // --- Components ---
 
-const SpectralVisualizer = ({ isEnabled }: { isEnabled: boolean }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>(null);
-
-  useEffect(() => {
-    if (!isEnabled || !canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    const analyser = engine.getAnalyser();
-    
-    if (!ctx || !analyser) return;
-
-    const bufferLength = analyser.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-
-    const draw = () => {
-      animationRef.current = requestAnimationFrame(draw);
-      analyser.getByteFrequencyData(dataArray);
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      const barWidth = (canvas.width / bufferLength) * 2.5;
-      let barHeight;
-      let x = 0;
-
-      for (let i = 0; i < bufferLength; i++) {
-        barHeight = (dataArray[i] / 255) * canvas.height;
-        
-        ctx.fillStyle = `rgba(255, 183, 178, ${0.1 + (dataArray[i] / 255) * 0.5})`;
-        ctx.fillRect(x, canvas.height - barHeight, barWidth, barHeight);
-
-        x += barWidth + 1;
-      }
-    };
-
-    draw();
-
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current);
-    };
-  }, [isEnabled]);
-
-  if (!isEnabled) return null;
-
-  return (
-    <canvas 
-      ref={canvasRef} 
-      className="absolute inset-0 w-full h-full opacity-20 pointer-events-none"
-      width={800}
-      height={400}
-    />
-  );
-};
-
 export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(INITIAL_BPM);
@@ -361,9 +307,27 @@ export default function App() {
   const [tracks, setTracks] = useState<Track[]>(
     TRACKS_CONFIG.map(config => ({
       ...config,
+      instanceId: Math.random().toString(36).substring(7),
       steps: Array(STEPS_COUNT).fill(null).map(() => ({ active: false })),
     }))
   );
+
+  const addTrack = () => {
+    const config = TRACKS_CONFIG[Math.floor(Math.random() * TRACKS_CONFIG.length)];
+    setTracks(prev => [
+      ...prev,
+      {
+        ...config,
+        instanceId: Math.random().toString(36).substring(7),
+        steps: Array(STEPS_COUNT).fill(null).map(() => ({ active: false })),
+      }
+    ]);
+  };
+
+  const removeTrack = (indexToRemove: number) => {
+    setTracks(prev => prev.filter((_, index) => index !== indexToRemove));
+    setActiveDropdown(null);
+  };
 
   const timerRef = useRef<number | null>(null);
   const nextNoteTimeRef = useRef(0);
@@ -495,7 +459,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#0A0A0B] text-white/90 font-mono p-4 md:p-8 flex flex-col items-center justify-center transition-colors duration-500 relative overflow-hidden">
-      <SpectralVisualizer isEnabled={showVisuals} />
       
       {/* Waiting Mode Overlay */}
       <AnimatePresence>
@@ -670,26 +633,35 @@ export default function App() {
         <div className="space-y-4 relative z-10">
           {tracks.map((track, trackIdx) => (
             <div 
-              key={track.id} 
+              key={track.instanceId} 
               className="flex items-center gap-4 p-3 rounded-2xl transition-all duration-300 group"
               style={{ 
                 backgroundColor: `${track.color}08`, // Very subtle background tint
                 borderLeft: `4px solid ${track.color}44` // Colored left border
               }}
             >
-              <div className="w-24 flex flex-col items-start relative z-50">
-                <button 
-                  onClick={() => setActiveDropdown(activeDropdown === trackIdx ? null : trackIdx)}
-                  className="px-2 py-1 rounded-md mb-1 flex items-center justify-between w-full hover:opacity-80 transition-opacity"
-                  style={{ backgroundColor: `${track.color}22` }}
-                  title="Changer d'instrument"
-                >
-                  <div className="flex items-center gap-1.5 overflow-hidden">
-                    <span style={{ color: track.color }} className="shrink-0">{track.icon}</span>
-                    <span className="text-[9px] font-black uppercase tracking-wider truncate" style={{ color: track.color }}>{track.name}</span>
-                  </div>
-                  <ChevronDown size={10} style={{ color: track.color }} className="shrink-0 opacity-50" />
-                </button>
+              <div className="w-28 flex flex-col items-start relative z-50">
+                <div className="flex items-center justify-between w-full mb-1 gap-1">
+                  <button 
+                    onClick={() => setActiveDropdown(activeDropdown === trackIdx ? null : trackIdx)}
+                    className="px-2 py-1 rounded-md flex-1 flex items-center justify-between hover:opacity-80 transition-opacity overflow-hidden"
+                    style={{ backgroundColor: `${track.color}22` }}
+                    title="Changer d'instrument"
+                  >
+                    <div className="flex items-center gap-1.5 overflow-hidden">
+                      <span style={{ color: track.color }} className="shrink-0">{track.icon}</span>
+                      <span className="text-[9px] font-black uppercase tracking-wider truncate" style={{ color: track.color }}>{track.name}</span>
+                    </div>
+                    <ChevronDown size={10} style={{ color: track.color }} className="shrink-0 opacity-50 ml-1" />
+                  </button>
+                  <button
+                    onClick={() => removeTrack(trackIdx)}
+                    className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 hover:bg-white/10 transition-all text-white/40 hover:text-red-400 shrink-0"
+                    title="Supprimer la ligne"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
 
                 {/* Dropdown Menu */}
                 <AnimatePresence>
@@ -754,11 +726,20 @@ export default function App() {
               </div>
             </div>
           ))}
+          
+          {/* Add Track Button */}
+          <button
+            onClick={addTrack}
+            className="w-full py-3 rounded-2xl border border-dashed border-white/20 text-white/40 hover:text-white/80 hover:border-white/40 hover:bg-white/5 transition-all flex items-center justify-center gap-2"
+          >
+            <Plus size={16} />
+            <span className="text-xs font-bold uppercase tracking-widest">Ajouter une ligne</span>
+          </button>
         </div>
 
         {/* Playhead indicator */}
         <div className="mt-4 flex items-center gap-4">
-          <div className="w-20" />
+          <div className="w-32" />
           <div className="flex-1 grid grid-cols-8 md:grid-cols-16 gap-1 md:gap-2">
             {Array(STEPS_COUNT).fill(0).map((_, i) => (
               <div key={i} className="flex justify-center">
