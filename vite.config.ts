@@ -8,7 +8,7 @@ export default defineConfig(({mode}) => {
   return {
     root: 'src',
     publicDir: '../public',
-    base: process.env.NODE_ENV === 'production' ? '/Apmusic/' : './',
+    base: mode === 'production' ? '/Apmusic/' : './',
     build: {
       outDir: '../',
       emptyOutDir: false,
